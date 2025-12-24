@@ -1,6 +1,6 @@
 {
-  "name": "NutriLens - AI Food Weight & Nutrition Estimator",
-  "description": "Snap a photo of your food to instantly get precise estimates for weight, calories, and detailed macronutrients using advanced AI vision.",
+  "name": "NutriLens - AI 智能膳食分析",
+  "description": "拍张照片，AI 帮你精准估算食物重量、热量及详细营养成分。",
   "requestFramePermissions": [
     "camera",
     "microphone"
