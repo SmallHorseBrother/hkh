@@ -4,6 +4,8 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { AppState, FoodScan, FoodItem, Nutrients, StapleMeal, CriticalSample } from '../types';
 import { analyzeFoodImage } from '../services/geminiService';
 import NutrientBadge from '../components/NutrientBadge';
+import { supabase } from '../lib/supabase';
+import { User } from '@supabase/supabase-js';
 import { 
   uploadImage, 
   saveMealToDb, 
@@ -11,7 +13,9 @@ import {
   saveStapleToDb, 
   fetchStaplesFromDb, 
   saveCriticalSampleToDb, 
-  fetchCriticalSamplesFromDb 
+  fetchCriticalSamplesFromDb,
+  deleteMealFromDb,
+  deleteCriticalSampleFromDb
 } from '../services/supabaseService';
 
 const SpeechRecognition = typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
@@ -33,11 +37,14 @@ const Icons = {
   Pencil: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" /></svg>,
   Heart: (props: any) => <svg xmlns="http://www.w3.org/2000/svg" fill={props.fill || "none"} viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" /></svg>,
   Check: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>,
+  User: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" /></svg>,
+  Logout: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" /></svg>,
   Sun: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M3 12h2.25m.386-6.364l1.591 1.591M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>,
   Angle: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19.5v-15m0 0l-3.75 3.75M12 4.5l3.75 3.75M4.5 12l7.5-7.5 7.5 7.5M4.5 15l7.5 7.5 7.5-7.5" /></svg>,
   Minus: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" /></svg>,
   Plus: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>,
   Warn: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>,
+  Trash: () => <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>,
 };
 
 const MODELS = {
@@ -86,6 +93,14 @@ const compressImage = (base64Str: string, maxWidth = 800, quality = 0.6): Promis
 };
 
 export default function FoodTrackerPage() {
+  const [user, setUser] = useState<User | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   const [state, setState] = useState<AppState>(AppState.IDLE);
   const [selectedModel, setSelectedModel] = useState(MODELS.FLASH);
   const [history, setHistory] = useState<FoodScan[]>([]);
@@ -117,7 +132,27 @@ export default function FoodTrackerPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // 获取初始会话
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    // 监听会话变化
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
     async function loadData() {
+      if (!user) {
+        setHistory([]);
+        setStaples([]);
+        setCriticalSamples([]);
+        return;
+      }
       try {
         const [meals, staplesData, samples] = await Promise.all([
           fetchMealsFromDb(),
@@ -135,7 +170,7 @@ export default function FoodTrackerPage() {
       }
     }
     loadData();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     let interval: any;
@@ -163,27 +198,67 @@ export default function FoodTrackerPage() {
     }
   };
 
-  const saveToHistory = async (scan: FoodScan) => {
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError(null);
     try {
-      await saveMealToDb(scan);
-      setHistory(prev => [scan, ...prev].slice(0, 50));
-    } catch (e) {
-      console.error("Failed to save to Supabase", e);
-      // 回退到 localStorage
-      safeLocalStorageSet('nutrilens_history_v4', [scan, ...history].slice(0, 50), setHistory);
+      if (authMode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        alert('注册成功，请检查邮箱进行验证（如果开启了邮箱验证）或直接登录。');
+      }
+      setShowAuthModal(false);
+      setEmail('');
+      setPassword('');
+    } catch (err: any) {
+      setAuthError(err.message || '操作失败');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
-  const processCriticalSamples = async (scan: FoodScan, isManual: boolean) => {
+  const handleLogout = async () => {
+    if (!confirm('确定要退出登录吗？')) return;
+    await supabase.auth.signOut();
+  };
+
+  const saveToHistory = async (scan: FoodScan): Promise<FoodScan> => {
+    if (!user) {
+      const updatedScan = { ...scan };
+      setHistory(prev => [updatedScan, ...prev].slice(0, 10));
+      return updatedScan;
+    }
+    try {
+      const dbId = await saveMealToDb(scan);
+      const updatedScan = { ...scan, id: dbId }; // 使用数据库生成的 UUID
+      setHistory(prev => [updatedScan, ...prev].slice(0, 50));
+      return updatedScan;
+    } catch (e) {
+      console.error("Failed to save to Supabase", e);
+      safeLocalStorageSet('nutrilens_history_v4', [scan, ...history].slice(0, 50), setHistory);
+      return scan;
+    }
+  };
+
+  const processCriticalSamples = async (scan: FoodScan) => {
     if (hasSavedCritical) return;
+    if (!user) {
+      setManualMarkError("请先登录以保存偏差样本到云端。");
+      setTimeout(() => setManualMarkError(null), 3500);
+      return;
+    }
     const newCriticals: CriticalSample[] = [];
-    const threshold = isManual ? 0 : 0.3;
+    const threshold = 0; // 手动标记时不设阈值，只要有修改就记录
     
     scan.items.forEach(item => {
       if (item.originalWeightGrams && item.originalWeightGrams > 0) {
          const diff = item.estimatedWeightGrams - item.originalWeightGrams;
          const percent = (diff / item.originalWeightGrams);
-         if (Math.abs(percent) > threshold && Math.abs(diff) > 1) {
+         if (Math.abs(diff) > 1) { // 只要有 1g 以上的差异就记录
             newCriticals.push({
                id: Date.now() + Math.random().toString(),
                timestamp: Date.now(),
@@ -202,7 +277,7 @@ export default function FoodTrackerPage() {
          await Promise.all(newCriticals.map(sample => saveCriticalSampleToDb(sample)));
          const updatedCriticals = [...newCriticals, ...criticalSamples].slice(0, 50);
          setCriticalSamples(updatedCriticals);
-         setCriticalToastMessage(isManual ? `已手动归档 ${newCriticals.length} 个样本` : `已自动归档 ${newCriticals.length} 个大偏差样本`);
+         setCriticalToastMessage(`已手动归档 ${newCriticals.length} 个偏差样本`);
          setCapturedCriticals(newCriticals.length);
          setTimeout(() => setCapturedCriticals(0), 4000);
          setHasSavedCritical(true);
@@ -213,18 +288,47 @@ export default function FoodTrackerPage() {
          const updatedCriticals = [...newCriticals, ...criticalSamples].slice(0, 50);
          safeLocalStorageSet('nutrilens_critical_samples_v1', updatedCriticals, setCriticalSamples);
        }
-    } else if (isManual) {
+    } else {
        setManualMarkError("请先修改上方的重量数值，以便我们记录偏差。");
        setTimeout(() => setManualMarkError(null), 3500);
     }
   };
 
   const manualSaveCritical = async () => {
-    if (currentScan) await processCriticalSamples(currentScan, true);
+    if (currentScan) await processCriticalSamples(currentScan);
+  };
+
+  const handleDeleteMeal = async (e: React.MouseEvent, mealId: string) => {
+    e.stopPropagation();
+    if (!confirm("确定要删除这条记录吗？")) return;
+    try {
+      await deleteMealFromDb(mealId);
+      setHistory(prev => prev.filter(m => m.id !== mealId));
+    } catch (err) {
+      console.error("Failed to delete meal", err);
+      alert("删除失败");
+    }
+  };
+
+  const handleDeleteCriticalSample = async (e: React.MouseEvent, sampleId: string) => {
+    e.stopPropagation();
+    if (!confirm("确定要删除这个偏差样本吗？")) return;
+    try {
+      await deleteCriticalSampleFromDb(sampleId);
+      setCriticalSamples(prev => prev.filter(s => s.id !== sampleId));
+    } catch (err) {
+      console.error("Failed to delete critical sample", err);
+      alert("删除失败");
+    }
   };
 
   const confirmSaveStaple = async () => {
     if (!currentScan || !stapleNameInput.trim()) return;
+    if (!user) {
+      alert("请先登录后再保存常餐模版");
+      setShowAuthModal(true);
+      return;
+    }
     const newStaple: Omit<StapleMeal, 'id'> = {
       name: stapleNameInput.trim(),
       imageUrl: currentScan.imageUrl,
@@ -246,7 +350,7 @@ export default function FoodTrackerPage() {
     }
   };
 
-  const logStaple = (staple: StapleMeal) => {
+  const logStaple = async (staple: StapleMeal) => {
     const newScan: FoodScan = {
       id: Date.now().toString(),
       timestamp: Date.now(),
@@ -261,12 +365,11 @@ export default function FoodTrackerPage() {
       }))
     };
     setCurrentScan(newScan);
-    saveToHistory(newScan);
+    await saveToHistory(newScan);
     setState(AppState.RESULT);
   };
 
   const finishSession = async () => {
-    if (currentScan) await processCriticalSamples(currentScan, false);
     reset();
   };
 
@@ -323,16 +426,25 @@ export default function FoodTrackerPage() {
     setIsConfirming(false);
     setState(AppState.ANALYZING);
     try {
-      // 1. 先将图片上传到 Supabase Storage
-      const cloudImageUrl = await uploadImage(tempImageUrl);
+      let finalImageUrl = tempImageUrl;
       
-      // 2. 使用 Base64 数据进行分析 (Gemini API 不接受 URL)
+      // 只有登录用户才上传到云端存储
+      if (user) {
+        try {
+          finalImageUrl = await uploadImage(tempImageUrl);
+        } catch (uploadErr) {
+          console.warn("Upload failed, using local URL:", uploadErr);
+          // 如果上传失败，我们仍然继续分析，但历史记录中的图片可能是 Base64
+        }
+      }
+      
+      // 使用 Base64 数据进行分析
       const result = await analyzeFoodImage(tempImageUrl, additionalContext, selectedModel);
       
       const newScan: FoodScan = {
-        id: Date.now().toString(),
+        id: Date.now().toString(), // 临时 ID
         timestamp: Date.now(),
-        imageUrl: cloudImageUrl, // 但保存到历史记录时使用云端 URL
+        imageUrl: finalImageUrl,
         description: result.description,
         insight: result.insight,
         globalScale: 100,
@@ -342,8 +454,10 @@ export default function FoodTrackerPage() {
           consumedPercentage: 100
         }))
       };
-      setCurrentScan(newScan);
-      await saveToHistory(newScan);
+      
+      // 保存并获取带真实 UUID 的记录
+      const savedScan = await saveToHistory(newScan);
+      setCurrentScan(savedScan); // 这样 currentScan 里的 ID 就是 UUID 了
       setState(AppState.RESULT);
     } catch (err: any) {
       setError(err.message || '分析失败');
@@ -434,6 +548,20 @@ export default function FoodTrackerPage() {
         <h1 className="text-xl font-extrabold bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">NutriLens 智能食探</h1>
         <div className="flex items-center gap-4">
           {(state !== AppState.IDLE || isConfirming) && <button onClick={reset} className="text-gray-400 hover:text-gray-600 p-2"><Icons.XCircle /></button>}
+          {user ? (
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+                <Icons.User />
+              </div>
+              <button onClick={handleLogout} className="text-gray-400 hover:text-red-500 p-2" title="退出登录">
+                <Icons.Logout />
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setShowAuthModal(true)} className="px-4 py-1.5 rounded-full bg-gray-900 text-white text-xs font-bold hover:bg-gray-800 transition-colors">
+              登录/注册
+            </button>
+          )}
         </div>
       </header>
 
@@ -472,7 +600,13 @@ export default function FoodTrackerPage() {
                   {staples.length > 0 && <span className="text-[10px] text-green-600 font-bold">左右滑动快速记录</span>}
                 </div>
                 <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4">
-                  {staples.length > 0 ? staples.map(staple => (
+                  {!user ? (
+                    <div className="w-full bg-blue-50/50 border-2 border-dashed border-blue-200 rounded-[2rem] p-6 flex flex-col items-center justify-center text-center space-y-2 text-blue-400">
+                      <div className="p-3 bg-white rounded-full text-blue-300"><Icons.User /></div>
+                      <p className="text-xs font-bold">登录后开启云端常餐模版<br/>多端同步，永不丢失</p>
+                      <button onClick={() => setShowAuthModal(true)} className="text-[10px] bg-blue-600 text-white px-4 py-1.5 rounded-full font-black">立即登录</button>
+                    </div>
+                  ) : staples.length > 0 ? staples.map(staple => (
                       <button key={staple.id} onClick={() => logStaple(staple)} className="flex-shrink-0 w-28 space-y-2 text-left group">
                         <div className="relative aspect-square rounded-[1.5rem] overflow-hidden border-2 border-transparent group-hover:border-green-500 shadow-sm transition-all group-active:scale-90">
                           <img src={staple.imageUrl} className="w-full h-full object-cover" />
@@ -605,20 +739,107 @@ export default function FoodTrackerPage() {
         )}
 
         {state === AppState.HISTORY && (
-          <div className="animate-in slide-in-from-bottom-10 space-y-6 pb-20"><div className="flex items-center gap-4"><button onClick={() => setState(AppState.IDLE)} className="p-3 bg-white rounded-full text-gray-400 shadow-sm"><Icons.ArrowLeft /></button><h2 className="text-2xl font-black text-gray-800">历史记录</h2></div>
-             <button onClick={() => setState(AppState.CRITICAL_SAMPLES)} className="w-full bg-red-50 border border-red-100 rounded-[1.5rem] p-4 flex items-center justify-between shadow-sm active:scale-95 transition-transform"><div className="flex items-center gap-3"><div className="p-2 bg-red-100 text-red-600 rounded-full"><Icons.Warn /></div><div className="text-left"><p className="text-sm font-bold text-red-800">偏差样本库</p><p className="text-xs text-red-400">已归档 {criticalSamples.length} 个 AI 偏差案例</p></div></div><div className="text-red-300"><Icons.ChevronDown /></div></button>
-             <div className="space-y-4">{history.length > 0 ? history.map(h => (<div key={h.id} onClick={() => { setCurrentScan(h); setState(AppState.RESULT); }} className="bg-white rounded-[1.5rem] p-4 flex items-center gap-4 border border-gray-100 shadow-sm cursor-pointer hover:border-green-500 transition-colors"><img src={h.imageUrl} className="w-16 h-16 rounded-xl object-cover" /><div className="flex-1"><p className="text-sm font-black text-gray-800 line-clamp-1">{h.description}</p><p className="text-xs text-gray-400 mt-1">{new Date(h.timestamp).toLocaleDateString()} • {Math.round(h.items.reduce((acc, i) => acc + (i.nutrients?.calories || 0), 0))} kcal</p></div></div>)) : (<div className="py-20 text-center space-y-2 text-gray-300 italic"><Icons.History /><p>暂无识别历史</p></div>)}</div>
+          <div className="animate-in slide-in-from-bottom-10 space-y-6 pb-20">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setState(AppState.IDLE)} className="p-3 bg-white rounded-full text-gray-400 shadow-sm">
+                <Icons.ArrowLeft />
+              </button>
+              <h2 className="text-2xl font-black text-gray-800">历史记录</h2>
+            </div>
+            {!user && (
+              <div className="bg-orange-50 border border-orange-100 rounded-2xl p-4 flex items-center gap-3">
+                <Icons.Warn />
+                <div className="flex-1">
+                  <p className="text-xs font-bold text-orange-800">未登录模式</p>
+                  <p className="text-[10px] text-orange-600">当前记录仅保存在本地内存，关闭页面后将丢失。登录后可永久保存并多端同步。</p>
+                </div>
+                <button onClick={() => setShowAuthModal(true)} className="px-3 py-1 bg-orange-600 text-white text-[10px] font-bold rounded-full">登录</button>
+              </div>
+            )}
+             <button onClick={() => user ? setState(AppState.CRITICAL_SAMPLES) : setShowAuthModal(true)} className="w-full bg-red-50 border border-red-100 rounded-[1.5rem] p-4 flex items-center justify-between shadow-sm active:scale-95 transition-transform"><div className="flex items-center gap-3"><div className="p-2 bg-red-100 text-red-600 rounded-full"><Icons.Warn /></div><div className="text-left"><p className="text-sm font-bold text-red-800">偏差样本库</p><p className="text-xs text-red-400">{user ? `已归档 ${criticalSamples.length} 个 AI 偏差案例` : '登录后查看您的纠偏记录'}</p></div></div><div className="text-red-300"><Icons.ChevronDown /></div></button>
+             <div className="space-y-4">{history.length > 0 ? history.map(h => (
+               <div key={h.id} onClick={() => { setCurrentScan(h); setState(AppState.RESULT); }} className="bg-white rounded-[1.5rem] p-4 flex items-center gap-4 border border-gray-100 shadow-sm cursor-pointer hover:border-green-500 transition-colors group relative">
+                 <img src={h.imageUrl} className="w-16 h-16 rounded-xl object-cover" />
+                 <div className="flex-1">
+                   <p className="text-sm font-black text-gray-800 line-clamp-1">{h.description}</p>
+                   <p className="text-xs text-gray-400 mt-1">{new Date(h.timestamp).toLocaleDateString()} • {Math.round(h.items.reduce((acc, i) => acc + (i.nutrients?.calories || 0), 0))} kcal</p>
+                 </div>
+                 <button 
+                   onClick={(e) => handleDeleteMeal(e, h.id)} 
+                   className="p-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                 >
+                   <Icons.Trash />
+                 </button>
+               </div>
+             )) : (<div className="py-20 text-center space-y-2 text-gray-300 italic"><Icons.History /><p>暂无识别历史</p></div>)}</div>
           </div>
         )}
 
         {state === AppState.CRITICAL_SAMPLES && (
            <div className="animate-in slide-in-from-bottom-10 space-y-6 pb-20"><div className="flex items-center gap-4"><button onClick={() => setState(AppState.HISTORY)} className="p-3 bg-white rounded-full text-gray-400 shadow-sm"><Icons.ArrowLeft /></button><h2 className="text-xl font-black text-gray-800">AI 偏差样本库</h2></div><p className="text-sm text-gray-500 px-1">当您对 AI 的估算结果修正超过 30% 时，系统会自动将该样本保存至此，以便后续分析。</p>
-             <div className="space-y-4">{criticalSamples.length > 0 ? criticalSamples.map(sample => (<div key={sample.id} className="bg-white rounded-[1.5rem] p-4 border border-red-100 shadow-sm space-y-3"><div className="flex gap-4"><img src={sample.imageUrl} className="w-20 h-20 rounded-xl object-cover" /><div className="flex-1 space-y-1"><p className="text-sm font-black text-gray-800">{sample.foodName}</p><p className="text-xs text-gray-400">{new Date(sample.timestamp).toLocaleDateString()}</p><div className="inline-block px-2 py-1 bg-red-100 text-red-600 rounded-lg text-[10px] font-bold mt-1">偏差 {sample.deviationPercent > 0 ? '+' : ''}{sample.deviationPercent}%</div></div></div><div className="bg-gray-50 rounded-xl p-3 flex justify-between items-center text-xs"><div className="text-center"><p className="text-gray-400 mb-1">AI 预估</p><p className="font-black text-gray-800 text-lg">{Math.round(sample.aiWeight)}g</p></div><div className="text-gray-300">➔</div><div className="text-center"><p className="text-gray-400 mb-1">您修正为</p><p className="font-black text-green-600 text-lg">{Math.round(sample.userWeight)}g</p></div></div></div>)) : (<div className="py-20 text-center space-y-2 text-gray-300 italic"><Icons.Check /><p>暂无严重偏差样本<br/>说明 AI 最近表现不错！</p></div>)}</div>
+             <div className="space-y-4">{criticalSamples.length > 0 ? criticalSamples.map(sample => (
+               <div key={sample.id} className="bg-white rounded-[1.5rem] p-4 border border-red-100 shadow-sm space-y-3 relative group">
+                 <button 
+                   onClick={(e) => handleDeleteCriticalSample(e, sample.id)} 
+                   className="absolute top-4 right-4 p-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all z-10"
+                 >
+                   <Icons.Trash />
+                 </button>
+                 <div className="flex gap-4">
+                   <img src={sample.imageUrl} className="w-20 h-20 rounded-xl object-cover" />
+                   <div className="flex-1 space-y-1">
+                     <p className="text-sm font-black text-gray-800">{sample.foodName}</p>
+                     <p className="text-xs text-gray-400">{new Date(sample.timestamp).toLocaleDateString()}</p>
+                     <div className="inline-block px-2 py-1 bg-red-100 text-red-600 rounded-lg text-[10px] font-bold mt-1">偏差 {sample.deviationPercent > 0 ? '+' : ''}{sample.deviationPercent}%</div>
+                   </div>
+                 </div>
+                 <div className="bg-gray-50 rounded-xl p-3 flex justify-between items-center text-xs">
+                   <div className="text-center"><p className="text-gray-400 mb-1">AI 预估</p><p className="font-black text-gray-800 text-lg">{Math.round(sample.aiWeight)}g</p></div>
+                   <div className="text-gray-300">➔</div>
+                   <div className="text-center"><p className="text-gray-400 mb-1">您修正为</p><p className="font-black text-green-600 text-lg">{Math.round(sample.userWeight)}g</p></div>
+                 </div>
+               </div>
+             )) : (<div className="py-20 text-center space-y-2 text-gray-300 italic"><Icons.Check /><p>暂无严重偏差样本<br/>说明 AI 最近表现不错！</p></div>)}</div>
            </div>
         )}
       </main>
 
       <canvas ref={canvasRef} className="hidden" />
+
+      {showAuthModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm bg-white rounded-[2.5rem] p-8 space-y-6 shadow-2xl animate-in zoom-in-95">
+            <div className="space-y-2 text-center">
+              <h3 className="text-2xl font-black text-gray-800">{authMode === 'login' ? '欢迎回来' : '开启健康之旅'}</h3>
+              <p className="text-sm text-gray-500">登录后可同步您的食谱和常餐模版到所有设备。</p>
+            </div>
+            
+            <form onSubmit={handleAuth} className="space-y-4">
+              {authError && <div className="p-3 bg-red-50 text-red-500 text-xs font-bold rounded-xl">{authError}</div>}
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">邮箱地址</label>
+                <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your@email.com" className="w-full bg-gray-50 border-none rounded-2xl p-4 text-base font-bold text-gray-800 focus:ring-2 focus:ring-green-500 outline-none" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">密码</label>
+                <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" className="w-full bg-gray-50 border-none rounded-2xl p-4 text-base font-bold text-gray-800 focus:ring-2 focus:ring-green-500 outline-none" />
+              </div>
+              <button disabled={authLoading} type="submit" className="w-full py-4 bg-gray-900 text-white rounded-2xl font-black shadow-lg active:scale-95 transition-transform">
+                {authLoading ? '请稍候...' : (authMode === 'login' ? '登录' : '立即注册')}
+              </button>
+            </form>
+
+            <div className="text-center pt-2">
+              <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="text-xs font-bold text-green-600 hover:underline">
+                {authMode === 'login' ? '还没有账号？点击注册' : '已有账号？点击登录'}
+              </button>
+              <button onClick={() => setShowAuthModal(false)} className="block w-full mt-4 text-xs font-bold text-gray-400 hover:text-gray-600">
+                稍后再说
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {(state === AppState.IDLE || state === AppState.HISTORY || state === AppState.CRITICAL_SAMPLES) && (
         <nav className="fixed bottom-8 inset-x-0 w-[85%] max-w-sm mx-auto bg-gray-900/90 backdrop-blur-xl border border-white/10 shadow-2xl rounded-[3rem] px-8 py-4 flex items-center justify-around z-40">

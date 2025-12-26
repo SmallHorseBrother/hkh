@@ -1,6 +1,14 @@
 import { supabase } from '../lib/supabase';
 import { FoodScan, StapleMeal, CriticalSample } from '../types';
 
+async function requireUserId(): Promise<string> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  const userId = data.user?.id;
+  if (!userId) throw new Error('未登录');
+  return userId;
+}
+
 /**
  * 将 base64 图片上传到 Supabase Storage
  */
@@ -42,9 +50,11 @@ export async function uploadImage(base64Data: string): Promise<string> {
  * 保存识餐记录到数据库
  */
 export async function saveMealToDb(scan: FoodScan) {
+  const userId = await requireUserId();
   const { data: meal, error: mealError } = await supabase
     .from('meals')
     .insert({
+      user_id: userId,
       timestamp: scan.timestamp,
       description: scan.description,
       insight: scan.insight,
@@ -57,6 +67,7 @@ export async function saveMealToDb(scan: FoodScan) {
   if (mealError) throw mealError;
 
   const itemsToInsert = scan.items.map(item => ({
+    user_id: userId,
     meal_id: meal.id,
     name: item.name,
     estimated_weight_grams: item.estimatedWeightGrams,
@@ -78,12 +89,14 @@ export async function saveMealToDb(scan: FoodScan) {
  * 获取历史记录
  */
 export async function fetchMealsFromDb(): Promise<FoodScan[]> {
+  const userId = await requireUserId();
   const { data, error } = await supabase
     .from('meals')
     .select(`
       *,
       meal_items (*)
     `)
+    .eq('user_id', userId)
     .order('timestamp', { ascending: false })
     .limit(50);
 
@@ -111,9 +124,11 @@ export async function fetchMealsFromDb(): Promise<FoodScan[]> {
  * 保存常餐模版
  */
 export async function saveStapleToDb(staple: Omit<StapleMeal, 'id'>) {
+  const userId = await requireUserId();
   const { data, error } = await supabase
     .from('staple_meals')
     .insert({
+      user_id: userId,
       name: staple.name,
       image_url: staple.imageUrl,
       total_calories: staple.totalCalories,
@@ -123,16 +138,25 @@ export async function saveStapleToDb(staple: Omit<StapleMeal, 'id'>) {
     .single();
 
   if (error) throw error;
-  return data;
+  
+  return {
+    id: data.id,
+    name: data.name,
+    imageUrl: data.image_url,
+    totalCalories: data.total_calories,
+    items: data.items
+  };
 }
 
 /**
  * 获取常餐模版
  */
 export async function fetchStaplesFromDb(): Promise<StapleMeal[]> {
+  const userId = await requireUserId();
   const { data, error } = await supabase
     .from('staple_meals')
     .select('*')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -150,9 +174,11 @@ export async function fetchStaplesFromDb(): Promise<StapleMeal[]> {
  * 保存偏差样本
  */
 export async function saveCriticalSampleToDb(sample: Omit<CriticalSample, 'id'>) {
+  const userId = await requireUserId();
   const { error } = await supabase
     .from('critical_samples')
     .insert({
+      user_id: userId,
       timestamp: sample.timestamp,
       food_name: sample.foodName,
       image_url: sample.imageUrl,
@@ -165,12 +191,42 @@ export async function saveCriticalSampleToDb(sample: Omit<CriticalSample, 'id'>)
 }
 
 /**
+ * 删除历史记录
+ */
+export async function deleteMealFromDb(mealId: string) {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from('meals')
+    .delete()
+    .eq('id', mealId)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+}
+
+/**
+ * 删除偏差样本
+ */
+export async function deleteCriticalSampleFromDb(sampleId: string) {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from('critical_samples')
+    .delete()
+    .eq('id', sampleId)
+    .eq('user_id', userId);
+
+  if (error) throw error;
+}
+
+/**
  * 获取偏差样本
  */
 export async function fetchCriticalSamplesFromDb(): Promise<CriticalSample[]> {
+  const userId = await requireUserId();
   const { data, error } = await supabase
     .from('critical_samples')
     .select('*')
+    .eq('user_id', userId)
     .order('timestamp', { ascending: false });
 
   if (error) throw error;
